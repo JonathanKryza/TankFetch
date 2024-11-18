@@ -14,35 +14,70 @@
 
 
 import telnetlib
-import sys
 import datetime
 
-ip = ''                        #The IP address of the ATG you are polling. Must be in quotations.
-port =                         #The default for most is 10001
-command = 'i201'               #Lowercase 'i' is used for the hexadecimal format. Uppercase 'I' for a human readable output.
-command2 = 'I202'              #Go to the docs folder for a full listing of commands or visit https://www.veeder.com
-tank = '00'                    #'00' means ALL. For a specific tank, enter as follows: Tank 1 = "01", Tank 12 = "12", etc
+ip = ''             			# The IP address of the ATG device you are polling.
+port = 10001                    # The default for most ATG devices is 10001.
+command = 'i201'               	# Go to the docs folder for a full listing of commands or visit https://www.veeder.com
+tank = '00'                   	# '00' means ALL. For a specific tank, enter as follows: Tank 1 = "01", Tank 12 = "12", etc
+log_file = 'logs.txt'			# Where captured output will be stored.
 
-def fetch_tcpip():
-	tn = telnetlib.Telnet(ip, port)
-	tn.write('\x01' + str(command) + str(tank))
-	tn.read_until(str(command) + str(tank))
-	global capture1
-	capture1 = tn.read_until('\x03',10).replace('\x03','')
-	tn.write('\x01' + str(command2) + str(tank))
-	tn.read_until(str(command2) + str(tank))
-	global capture2
-	capture2 = tn.read_until('\x03',10).replace('\x03','')
+
+def fetch_atg(ip: str, port: int, command: str, data: str) -> bytes:
+	"""
+	Function for executing a command on an ATG unit and returning the output.
+
+	ip - The IP address of the ATG device you are polling. String.\n
+	port - The port used to remotely connect to the ATG's software. Integer.\n
+	command - The command to execute on the ATG device (e.g. i201). String.\n
+	data - Data to be appended to the end of the command (e.g. 00). String.
+	"""
+
+	# Initializes connection to ATG device.
+	try:
+		tn = telnetlib.Telnet(ip, port)
+	except:
+		return f'Failed to connect to host {ip} using port {port}.'
+
+	# Converts payload to bytes and adds start of header CTRL + A to payload.
+	payload = bytes(command + data, 'utf-8')
+	tn.write(b'\x01' + payload)
+
+	# Passes over the original payload in the output to get to the data.
+	tn.read_until(payload)
+
+	# Saves all output data prior to the end of transmission, removes ETX (CTRL + C).
+	capture = tn.read_until(b'\x03', 10)
+	capture = capture.replace(b'\x03', b'')
+
+	# Closes connection and returns the captured data.
 	tn.close()
+	return capture
 	
 
-def report_txt():                               #Creating a simple txt file out of the output
+def report_txt(file: str, capture: bytes) -> None:	
+	"""
+	Used to record the captured data in a text file.
+
+	file - The  file to store captured data in. String.
+	capture - The captured data from fetch_atg(). Bytes.
+	"""
+	
+	# Convert the captured bytecode data into a string.
+	capture = capture.decode("utf-8")
+
+	# Store current date.
 	now = datetime.datetime.now()
-        date = now.strftime('%m-%d-%Y')         #Date format - visit https://docs.python.org/2/library/datetime.html
-        #Below is an example. State the directory and name of the file. 
-	open('\user\directory\\' + 'filename' + date + '.txt', 'w').write(capture2)  #.write can be anything you capture or you can combine multiples. Ex. .wrint(capture1 + capture2)
+	date = now.strftime('%m-%d-%Y')
+
+	# Open the logs file and add the capture data.
+	with open(file, 'a') as logs:
+		logs.write(capture + "\n")
 	
 	
-if __name__=="__main__":
-	fetch_tcpip()
-	report_txt()
+if __name__== "__main__":
+	# Passes parameters set by user over to the fetch_atg() function, saves output as capture.
+	capture = fetch_atg(ip, port, command, tank)
+
+	# Logs the data we just collected to the user-defined log file.
+	report_txt(log_file, capture)
